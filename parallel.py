@@ -13,6 +13,7 @@ import time
 import zlib
 
 import numpy
+import ruffus
 
 
 INNER_ONLY = False
@@ -27,7 +28,10 @@ def roots_for_poly(poly):
     return roots
 
 
-def roots_for_degree(degree):
+@ruffus.files("degree.txt", "roots.txt")
+def roots_for_degree(input_filename, output_filename):
+    degree = int(open(input_filename, "rb").read())
+    
     count = 0
     click = 2 ** degree / 10
     next = click
@@ -38,7 +42,9 @@ def roots_for_degree(degree):
             print >> sys.stderr, count
             next += click
         roots.extend(roots_for_poly(poly))
-    return roots
+    
+    with open(output_filename, "wb") as fp:
+        map(lambda x: fp.write("{} {}\n".format(x[0], x[1])), roots)
 
 
 def output_chunk(f, chunk_type, data):
@@ -49,13 +55,15 @@ def output_chunk(f, chunk_type, data):
     f.write(struct.pack("!i", checksum))
 
 
-def hits_for_roots(roots, size):
+def hits_for_roots(roots_filename, size):
     hits = numpy.zeros((int(size * 2.1), int(size * 1.5)), dtype=numpy.int)
-    for root in roots:
-        x = round(float(root[0]) * size)
-        y = round(float(root[1]) * size)
-        hits[x, y] += 1
-    return hits
+    with open(roots_filename, "rb") as fp:
+        for root in fp:
+            r, i = root.strip().split()
+            x = round(float(r) * size)
+            y = round(float(i) * size)
+            hits[x, y] += 1
+        return hits
 
 
 def rgb_for_value(value):
@@ -65,8 +73,13 @@ def rgb_for_value(value):
     )
 
 
-def heatmap(degree, roots, size):
-    hits = hits_for_roots(roots, size)
+@ruffus.files(["degree.txt", "size.txt", "roots.txt"], None)
+@ruffus.follows(roots_for_degree)
+def heatmap(input_filenames, output):
+    degree = int(open(input_filenames[0], "rb").read())
+    size = int(open(input_filenames[1], "rb").read())
+    hits = hits_for_roots(input_filenames[2], size)
+    
     hit_to_rgb = {}
     filename = "littlewood_{}_{}.png".format(degree, size)
     width = int(size * 4)
@@ -104,26 +117,13 @@ def heatmap(degree, roots, size):
 
 def main(degree, size):
     print "generating roots for degree={}".format(degree,)
-
+    
     start = time.time()
-
-    roots = roots_for_degree(degree)
-
-    print >> sys.stderr, "created {} roots in {} seconds".format(
-        len(roots),
-        time.time() - start
-    )
     
-    heatmap_start = time.time()
+    open("degree.txt", "wb").write(degree)
+    open("size.txt", "wb").write(size)
     
-    print "writing out PNG..."
-    
-    filename = heatmap(degree, roots, 200)
-    
-    print "wrote out {} in {} seconds".format(
-        filename,
-        round(time.time() - heatmap_start)
-    )
+    ruffus.pipeline_run([heatmap])
     
     print "total time: {} seconds".format(round(time.time()) - start)
 
