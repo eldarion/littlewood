@@ -161,7 +161,7 @@ def main(degree, size):
     open("degree.txt", "wb").write(degree)
     open("size.txt", "wb").write(size)
     
-    ruffus.pipeline_run([heatmap])
+    ruffus.pipeline_run([heatmap], multiprocess=2)
     
     print "total time: {} seconds".format(round(time.time()) - start)
 
