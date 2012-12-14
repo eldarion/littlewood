@@ -1,5 +1,8 @@
 #!/usr/bin/env python
 
+# attempt at pulling roots.py / heatmap.py work and making it run in parallel with ruffus
+
+# https://thoughtstreams.io/paltman/ruffus/
 
 import array
 import colorsys
