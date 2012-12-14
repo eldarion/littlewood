@@ -6,7 +6,9 @@
 
 import array
 import colorsys
+import glob
 import itertools
+import os
 import struct
 import sys
 import time
@@ -16,35 +18,88 @@ import numpy
 import ruffus
 
 
+ROOT_CHUNKS_SIZE = 1000
 INNER_ONLY = False
 
 
-def roots_for_poly(poly):
-    roots = []
-    for root in numpy.roots((1,) + poly):
-        if root.real >= 0 and root.imag >= 0:
-            if not INNER_ONLY or abs(root) <= 1:
-                roots.append((root.real, root.imag))
-    return roots
+def roots_for_poly(poly_filename, output_filenames):
+    poly = [
+        int(x)
+        for x in open(poly_filename, "rb").read().strip().split()
+    ]
+    print poly
+    with open(output_filename, "wb") as fp:
+        for root in numpy.roots((1,) + poly):
+            if root.real >= 0 and root.imag >= 0:
+                if not INNER_ONLY or abs(root) <= 1:
+                    fp.write("{} {}\n".format(root.real, root.imag))
 
 
-@ruffus.files("degree.txt", "roots.txt")
-def roots_for_degree(input_filename, output_filename):
+@ruffus.files("degree.txt", "poly.list")
+def create_polynomials(input_filename, output_filename):
     degree = int(open(input_filename, "rb").read())
-    
     count = 0
     click = 2 ** degree / 10
     next = click
-    roots = []
-    for poly in itertools.product(*([[-1, 1]] * degree)):
-        count += 1
-        if count == next:
-            print >> sys.stderr, count
-            next += click
-        roots.extend(roots_for_poly(poly))
-    
+    with open("poly.list", "wb") as fp:
+        for poly in itertools.product(*([[-1, 1]] * degree)):
+            count += 1
+            if count == next:
+                print >> sys.stderr, count
+                next += click
+            fp.write(
+                "{}\n".format(" ".join([str(x) for x in poly]))
+            )
+
+
+@ruffus.follows(create_polynomials)
+@ruffus.split("poly.list", "*.poly")
+def split_polynomials_list(input_filename, output_filenames):
+    for f in output_filenames:
+        os.unlink(f)
+    with open(input_filename, "rb") as fp:
+        count = 0
+        output_filename = "{}.poly".format(count)
+        for i, line in enumerate(fp):
+            if i % ROOT_CHUNKS_SIZE == 0:
+                count += 1
+                output_filename = "{}.poly".format(count)
+                out = open(output_filename, "wb")
+            out.write(line)
+
+
+@ruffus.transform(split_polynomials_list, ruffus.suffix(".poly"), ".roots")
+def roots_for_poly_chunks(input_filename, output_filename):
+    polys = open(input_filename, "rb").readlines()
     with open(output_filename, "wb") as fp:
-        map(lambda x: fp.write("{} {}\n".format(x[0], x[1])), roots)
+        for line in polys:
+            roots = numpy.roots([1] + [int(x) for x in line.strip().split()])
+            for root in roots:
+                if root.real >= 0 and root.imag >= 0:
+                    if not INNER_ONLY or abs(root) <= 1:
+                        fp.write("{} {}\n".format(root.real, root.imag))
+
+
+@ruffus.merge(roots_for_poly_chunks, "hits.txt")
+def hits_for_roots(input_filenames, output_filename):
+    size = int(open("size.txt", "rb").read())  # @@@ this is bad, hardcoded for now as i don't know how ot combine @files with @merge
+    hits = numpy.zeros((int(size * 2.1), int(size * 1.5)), dtype=numpy.int)
+    for input_filename in input_filenames:
+        roots = open(input_filename, "rb").readlines()
+        for root in roots:
+            r, i = root.strip().split()
+            x = round(float(r) * size)
+            y = round(float(i) * size)
+            hits[x, y] += 1
+    with open(output_filename, "wb") as fp:
+        map(lambda h: fp.write("{}\n".format(" ".join([str(x) for x in h]))), hits)
+
+
+def rgb_for_value(value):
+    return (
+        int(255 * x)
+        for x in colorsys.hsv_to_rgb(value / 4, 1 - value, 0.5 + value / 2)
+    )
 
 
 def output_chunk(f, chunk_type, data):
@@ -55,31 +110,14 @@ def output_chunk(f, chunk_type, data):
     f.write(struct.pack("!i", checksum))
 
 
-def hits_for_roots(roots_filename, size):
-    hits = numpy.zeros((int(size * 2.1), int(size * 1.5)), dtype=numpy.int)
-    with open(roots_filename, "rb") as fp:
-        for root in fp:
-            r, i = root.strip().split()
-            x = round(float(r) * size)
-            y = round(float(i) * size)
-            hits[x, y] += 1
-        return hits
-
-
-def rgb_for_value(value):
-    return (
-        int(255 * x)
-        for x in colorsys.hsv_to_rgb(value / 4, 1 - value, 0.5 + value / 2)
-    )
-
-
-@ruffus.files(["degree.txt", "size.txt", "roots.txt"], None)
-@ruffus.follows(roots_for_degree)
+@ruffus.files(["size.txt", "hits.txt"], None)
+@ruffus.follows(hits_for_roots)
 def heatmap(input_filenames, output):
-    degree = int(open(input_filenames[0], "rb").read())
-    size = int(open(input_filenames[1], "rb").read())
-    hits = hits_for_roots(input_filenames[2], size)
-    
+    size = int(open(input_filenames[0], "rb").read())
+    hits = numpy.array([
+        [float(y) for y in x.split()]
+        for x in open(input_filenames[1], "rb").readlines()
+    ])
     hit_to_rgb = {}
     filename = "littlewood_{}_{}.png".format(degree, size)
     width = int(size * 4)
