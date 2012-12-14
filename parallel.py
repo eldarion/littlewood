@@ -102,7 +102,7 @@ def heatmap(degree, roots, size):
     return filename
 
 
-def main(degree):
+def main(degree, size):
     print "generating roots for degree={}".format(degree,)
 
     start = time.time()
@@ -129,4 +129,9 @@ def main(degree):
 
 
 if __name__ == "__main__":
-    main(int(sys.argv[1]))
+    degree = sys.argv[1]
+    if len(sys.argv) == 3:
+        size = sys.argv[2]
+    else:
+        size = "200"
+    main(degree, size)
