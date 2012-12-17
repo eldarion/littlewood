@@ -19,15 +19,19 @@ import ruffus
 
 ROOT_CHUNKS_SIZE = 1000
 INNER_ONLY = False
+FILE_DEGREE = "degree.txt"
+FILE_POLY_LIST = "poly.list"
+FILE_SIZE = "size.txt"
+FILE_HITS = "hits.txt"
 
 
-@ruffus.files("degree.txt", "poly.list")
+@ruffus.files(FILE_DEGREE, FILE_POLY_LIST)
 def create_polynomials(input_filename, output_filename):
     degree = int(open(input_filename, "rb").read())
     count = 0
     click = 2 ** degree / 10
     next = click
-    with open("poly.list", "wb") as fp:
+    with open(FILE_POLY_LIST, "wb") as fp:
         for poly in itertools.product(*([[-1, 1]] * degree)):
             count += 1
             if count == next:
@@ -39,7 +43,7 @@ def create_polynomials(input_filename, output_filename):
 
 
 @ruffus.follows(create_polynomials)
-@ruffus.split("poly.list", "*.poly")
+@ruffus.split(FILE_POLY_LIST, "*.poly")
 def split_polynomials_list(input_filename, output_filenames):
     for f in output_filenames:
         os.unlink(f)
@@ -57,7 +61,7 @@ def split_polynomials_list(input_filename, output_filenames):
 @ruffus.transform(split_polynomials_list, ruffus.suffix(".poly"), ".roots")
 def roots_for_poly_chunks(input_filename, output_filename):
     polys = open(input_filename, "rb").readlines()
-    with open(output_filename, "wb") as fp:
+    with open(os.path.join(output_filename), "wb") as fp:
         for line in polys:
             roots = numpy.roots([1] + [int(x) for x in line.strip().split()])
             for root in roots:
@@ -66,9 +70,9 @@ def roots_for_poly_chunks(input_filename, output_filename):
                         fp.write("{} {}\n".format(root.real, root.imag))
 
 
-@ruffus.merge(roots_for_poly_chunks, "hits.txt")
+@ruffus.merge(roots_for_poly_chunks, FILE_HITS)
 def hits_for_roots(input_filenames, output_filename):
-    size = int(open("size.txt", "rb").read())  # @@@ this is bad, hardcoded for now as i don't know how ot combine @files with @merge
+    size = int(open(FILE_SIZE, "rb").read())  # @@@ this is bad, hardcoded for now as i don't know how ot combine @files with @merge
     hits = numpy.zeros((int(size * 2.1), int(size * 1.5)), dtype=numpy.int)
     for input_filename in input_filenames:
         roots = open(input_filename, "rb").readlines()
@@ -96,7 +100,7 @@ def output_chunk(f, chunk_type, data):
     f.write(struct.pack("!i", checksum))
 
 
-@ruffus.files(["size.txt", "hits.txt"], None)
+@ruffus.files([FILE_SIZE, FILE_HITS], None)
 @ruffus.follows(hits_for_roots)
 def heatmap(input_filenames, output):
     size = int(open(input_filenames[0], "rb").read())
@@ -144,8 +148,8 @@ def main(degree, size):
     
     start = time.time()
     
-    open("degree.txt", "wb").write(degree)
-    open("size.txt", "wb").write(size)
+    open(FILE_DEGREE, "wb").write(degree)
+    open(FILE_SIZE, "wb").write(size)
     
     ruffus.pipeline_run([heatmap], multiprocess=2)
     
