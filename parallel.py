@@ -6,7 +6,6 @@
 
 import array
 import colorsys
-import glob
 import itertools
 import os
 import struct
@@ -20,19 +19,6 @@ import ruffus
 
 ROOT_CHUNKS_SIZE = 1000
 INNER_ONLY = False
-
-
-def roots_for_poly(poly_filename, output_filenames):
-    poly = [
-        int(x)
-        for x in open(poly_filename, "rb").read().strip().split()
-    ]
-    print poly
-    with open(output_filename, "wb") as fp:
-        for root in numpy.roots((1,) + poly):
-            if root.real >= 0 and root.imag >= 0:
-                if not INNER_ONLY or abs(root) <= 1:
-                    fp.write("{} {}\n".format(root.real, root.imag))
 
 
 @ruffus.files("degree.txt", "poly.list")
