@@ -13,6 +13,7 @@ import sys
 import time
 import zlib
 
+import bliss.saga as saga  # pip install bliss==0.2.7
 import numpy
 import ruffus
 
@@ -60,14 +61,42 @@ def split_polynomials_list(input_filename, output_filenames):
 
 @ruffus.transform(split_polynomials_list, ruffus.suffix(".poly"), ".roots")
 def roots_for_poly_chunks(input_filename, output_filename):
-    polys = open(input_filename, "rb").readlines()
-    with open(os.path.join(output_filename), "wb") as fp:
-        for line in polys:
-            roots = numpy.roots([1] + [int(x) for x in line.strip().split()])
-            for root in roots:
-                if root.real >= 0 and root.imag >= 0:
-                    if not INNER_ONLY or abs(root) <= 1:
-                        fp.write("{} {}\n".format(root.real, root.imag))
+    ctx = saga.Context()
+    ctx.type = saga.Context.SSH
+    ctx.userid = "paltman"
+    ses = saga.Session()
+    ses.contexts.append(ctx)
+    
+    workdir = saga.filesystem.Directory("sftp://localhost/tmp/remote-littlewood/", saga.filesystem.Create, session=ses)
+    inp = saga.filesystem.File("sftp://localhost/{}/{}".format(os.getcwd(), input_filename))
+    script = saga.filesystem.File("sftp://localhost/{}/roots_for_poly_chunks.py".format(os.getcwd()))
+    inp.copy(workdir.get_url())
+    script.copy(workdir.get_url())
+    
+    js = saga.job.Service("ssh://localhost", session=ses)
+    jd = saga.job.Description()
+    jd.environment = {"PATH": "/Users/paltman/.virtualenvs/saga/bin"}
+    jd.working_directory = workdir.get_url().path
+    jd.executable = "python"
+    jd.arguments = ["roots_for_poly_chunks.py", input_filename, output_filename]
+    jd.output = "mysagajob.stdout"
+    jd.error = "mysagajob.stderr"
+    
+    job = js.create_job(jd)
+    
+    print "Job ID     : %s" % job.jobid
+    print "Job State  : %s" % job.get_state()
+    print "...starting job..."
+    job.run()
+    print "Job ID     : %s" % job.jobid
+    print "Job State  : %s" % job.get_state()
+    print "...waiting for job..."
+    job.wait()
+    print "Job State  : %s" % job.get_state()
+    print "Exit Code  : %s" % job.exitcode
+    
+    for root in workdir.list("*.roots"):
+        workdir.copy(root, "sftp://localhost/{}/".format(os.getcwd()))
 
 
 @ruffus.merge(roots_for_poly_chunks, FILE_HITS)
