@@ -7,6 +7,7 @@
 import array
 import colorsys
 import itertools
+import logging
 import os
 import struct
 import sys
@@ -17,6 +18,7 @@ import bliss.saga as saga  # pip install bliss==0.2.7
 import numpy
 import ruffus
 
+logging.getLogger("paramiko.transport").addHandler(logging.StreamHandler())
 
 ROOT_CHUNKS_SIZE = 1000
 INNER_ONLY = False
@@ -63,20 +65,20 @@ def split_polynomials_list(input_filename, output_filenames):
 def roots_for_poly_chunks(input_filename, output_filename):
     ctx = saga.Context()
     ctx.type = saga.Context.SSH
-    ctx.userid = "paltman"
+    ctx.userid = "sgeadmin"
+    ctx.userkey = "/Users/paltman/.starcluster/starcluster-key"
     ses = saga.Session()
     ses.contexts.append(ctx)
     
-    workdir = saga.filesystem.Directory("sftp://localhost/tmp/remote-littlewood/", saga.filesystem.Create, session=ses)
-    inp = saga.filesystem.File("sftp://localhost/{}/{}".format(os.getcwd(), input_filename))
-    script = saga.filesystem.File("sftp://localhost/{}/roots_for_poly_chunks.py".format(os.getcwd()))
-    inp.copy(workdir.get_url())
-    script.copy(workdir.get_url())
+    #workdir = saga.filesystem.Directory("sftp://ec2-50-17-99-182.compute-1.amazonaws.com/opt/sge6/remote-littlewood/", saga.filesystem.Create, session=ses)
+    #inp = saga.filesystem.File("sftp://localhost/{}/{}".format(os.getcwd(), input_filename))
+    #script = saga.filesystem.File("sftp://localhost/{}/roots_for_poly_chunks.py".format(os.getcwd()))
+    #inp.copy(workdir.get_url())
+    #script.copy(workdir.get_url())
     
-    js = saga.job.Service("ssh://localhost", session=ses)
+    js = saga.job.Service("sge+ssh://ec2-50-17-99-182.compute-1.amazonaws.com", session=ses)
     jd = saga.job.Description()
-    jd.environment = {"PATH": "/Users/paltman/.virtualenvs/saga/bin"}
-    jd.working_directory = workdir.get_url().path
+    #jd.working_directory = workdir.get_url().path
     jd.executable = "python"
     jd.arguments = ["roots_for_poly_chunks.py", input_filename, output_filename]
     jd.output = "mysagajob.stdout"
@@ -86,7 +88,7 @@ def roots_for_poly_chunks(input_filename, output_filename):
     job.run()
     job.wait()
     
-    workdir.copy(output_filename, "sftp://localhost/{}/".format(os.getcwd()))
+    #workdir.copy(output_filename, "sftp://localhost/{}/".format(os.getcwd()))
 
 
 @ruffus.merge(roots_for_poly_chunks, FILE_HITS)
@@ -170,7 +172,7 @@ def main(degree, size):
     open(FILE_DEGREE, "wb").write(degree)
     open(FILE_SIZE, "wb").write(size)
     
-    ruffus.pipeline_run([heatmap], multiprocess=2)
+    ruffus.pipeline_run([heatmap], multiprocess=20)
     
     print "total time: {} seconds".format(round(time.time()) - start)
 
