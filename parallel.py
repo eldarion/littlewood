@@ -83,20 +83,10 @@ def roots_for_poly_chunks(input_filename, output_filename):
     jd.error = "mysagajob.stderr"
     
     job = js.create_job(jd)
-    
-    print "Job ID     : %s" % job.jobid
-    print "Job State  : %s" % job.get_state()
-    print "...starting job..."
     job.run()
-    print "Job ID     : %s" % job.jobid
-    print "Job State  : %s" % job.get_state()
-    print "...waiting for job..."
     job.wait()
-    print "Job State  : %s" % job.get_state()
-    print "Exit Code  : %s" % job.exitcode
     
-    for root in workdir.list("*.roots"):
-        workdir.copy(root, "sftp://localhost/{}/".format(os.getcwd()))
+    workdir.copy(output_filename, "sftp://localhost/{}/".format(os.getcwd()))
 
 
 @ruffus.merge(roots_for_poly_chunks, FILE_HITS)
