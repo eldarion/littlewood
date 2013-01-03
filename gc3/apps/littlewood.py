@@ -15,14 +15,21 @@ class PolynomialsApplication(gc3libs.Application):
             arguments=["python", "polynomials.py", degree],
             inputs=["../bin/polynomials.py"],
             outputs=["{}.poly".format(x) for x in range(10)],
-            output_dir=output_dir
+            output_dir=output_dir,
+            stdout="stdout.txt",
+            join=True
         )
 
 
 class RootsApplication(gc3libs.Application):
     def __init__(self, input_file, output_file, output_dir):
         super(RootsApplication, self).__init__(
-            arguments=["python", "roots.py", input_file, output_file],
+            arguments=[
+                "python",
+                "roots.py",
+                os.path.basename(input_file),
+                os.path.basename(output_file)
+            ],
             inputs=["../bin/roots.py", input_file],
             outputs=[output_file],
             output_dir=output_dir,
@@ -34,7 +41,7 @@ class RootsApplication(gc3libs.Application):
 class HeatmapApplication(gc3libs.Application):
     def __init__(self, size, output_dir):
         self.size = size
-        inputs = ["../heatmap.py"]
+        inputs = ["../bin/heatmap.py"]
         inputs.extend(
             glob.glob(os.path.join(output_dir, "*.root"))
         )
@@ -50,12 +57,13 @@ class HeatmapApplication(gc3libs.Application):
 
 class RootsCollection(ParallelTaskCollection):
     def __init__(self, output_dir):
+        self.output_dir = output_dir
         tasks = []
         for path in glob.glob(os.path.join(output_dir, "*.poly")):
             tasks.append(
                 RootsApplication(
                     input_file=path,
-                    output_file=path.replace("poly", "root"),
+                    output_file=os.path.basename(path.replace("poly", "root")),
                     output_dir=output_dir
                 )
             )
